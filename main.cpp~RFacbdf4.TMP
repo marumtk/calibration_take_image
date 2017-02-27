@@ -1,0 +1,294 @@
+#include "basler.h"
+#include "Webcam.h"
+#include "XimeaXiQ.h"
+#include "HighSpeedProj.h"
+#include<conio.h>
+
+
+
+
+//*******************************************************************************//
+//********プロジェクタとカメラのキャリブレーション用の画像取得プログラム*********//
+//*******************************************************************************//
+
+#define CalibrationMode 1
+#define ProjecterCalibrationMode 1
+
+
+
+//関数定義
+//四角形を描画する(描画する画像、正方形のサイズ、描画開始位置、黒か白か)
+void Square_paint(cv::Mat &paint_image, const int square_size, const cv::Point offset_point, bool flag);
+//チェッカーパターンを生成する(生成する画像、チェッカーパターンの横の格子点の数、チェッカーパターンの縦の格子点の数、白始まりのチェッカーパターンか黒始まりのチェッカーパターンか)
+void Calibration_pattern(cv::Mat &calib_image, const unsigned int cheker_width, const unsigned int cheker_height, bool flag);
+
+
+int main()
+{
+	
+	XimeaXiQ Ximea;
+	basler Basler;
+#if ProjecterCalibrationMode
+
+	bool white_black_flag = true;
+	cv::Mat image1, image2;
+	Calibration_pattern(image1,6,5, true);
+	Calibration_pattern(image2,6,5, false);
+	cv::imshow("image",image1);
+	cv::imshow("image",image2);
+
+	std::cout << "チェッカーパターン生成完了" << std::endl;
+
+	HighSpeedProj Highspeedproj;
+	Highspeedproj.connectProj();
+	auto projection_image1 = image1.clone();
+	auto projection_image2 = image2.clone();
+#endif
+	
+	std::vector<cv::Mat> ImageBufferRight(0);
+	std::vector<cv::Mat> ImageBufferLeft(0);
+	
+	cv::Mat XimeaImage;
+	cv::Mat BaslerImage;
+
+	Basler.camera_init();
+
+	std::cout << "操作方法" << std::endl;
+	std::cout << "w : 画像取得" << std::endl;
+	std::cout << "p : 現在の画像枚数確認" << std::endl;
+	std::cout << "c : 撮像した画像を一枚取り消し" << std::endl;
+	std::cout << "q : 終了" << std::endl;
+
+
+	while(true)
+	{
+#if ProjecterCalibrationMode
+		if(white_black_flag == true)
+		{
+			Highspeedproj.sendImage(projection_image1);
+		}
+		else
+		{
+			Highspeedproj.sendImage(projection_image2);
+		}
+#endif
+		Basler.cap_color(BaslerImage);
+		Ximea.getFrame(XimeaImage);
+		
+		if(XimeaImage.data != 0)
+		{
+			cv::imshow("RightImageWindow",XimeaImage);
+		}
+		if(BaslerImage.data != 0)
+		{
+			cv::imshow("LeftImageWindow",BaslerImage);
+		}
+		int key = cv::waitKey(1);
+		//撮像終了
+		if(key == 'q')
+		{
+			std::cout << "終了" << std::endl;
+			break;
+		}
+		//一枚取得する
+		else if(key == 'w')
+		{
+			
+			ImageBufferLeft.push_back(BaslerImage.clone());
+			ImageBufferRight.push_back(XimeaImage.clone());
+			auto index = ImageBufferLeft.size();
+			cv::imshow("SaveImgae1",ImageBufferLeft[index-1]);
+			cv::imshow("SaveImgae2",ImageBufferRight[index-1]);
+#if ProjecterCalibrationMode
+			if(white_black_flag == true)
+			{
+				white_black_flag = false;
+			}
+			else
+			{
+				white_black_flag = true;
+			}
+#endif
+			std::cout << "画像取得完了" << std::endl;
+		}
+		//現在の撮像枚数確認
+		else if(key == 'p')
+		{
+			std::cout << "現在 " << ImageBufferLeft.size() << " 枚撮像されています" << std::endl;
+		}
+		//撮像を失敗したら取り消し
+		else if(key == 'c')
+		{
+			if(ImageBufferLeft.size() != 0)
+			{
+				ImageBufferLeft.pop_back();
+				ImageBufferRight.pop_back();
+				std::cout << "画像を一枚取り消しました" << std::endl;
+			}
+			else
+			{
+			std::cout << "取り消す画像がありません" << std::endl;
+			}
+		}
+
+		key = 0;
+
+
+	}
+
+	char Filename[100];
+	char _filename1[] = "data/left/left";
+	char _filename2[] = "data/right/right";
+	char fileext[] = "bmp";
+
+	std::cout << "画像書き出し開始" << std::endl;
+
+	for(int i=0; i < ImageBufferLeft.size(); i++)
+	{
+		sprintf_s(Filename,"%s%02d.%s",_filename1,i,fileext);
+		imwrite(Filename,ImageBufferLeft[i]);
+	}
+	for(int i=0; i < ImageBufferRight.size(); i++)
+	{
+		sprintf_s(Filename,"%s%02d.%s",_filename2,i,fileext);
+		imwrite(Filename,ImageBufferRight[i]);
+	}
+	cv::destroyAllWindows();
+
+
+	return 1;
+}
+
+
+
+
+// チェッカーパターンの生成
+void Calibration_pattern(cv::Mat &calib_image, const unsigned int cheker_width, const unsigned int cheker_height, bool color_flag)
+{
+	auto _width = cheker_width - 1;
+	auto _height = cheker_height - 1;
+	const unsigned int cheker_size = 400;//80pixelのチェッカーパターンを生成
+	auto _cheker_width = (_width + 2) * cheker_size; // チェッカーパターン全体の横幅(pixel)、[+1]の理由は格子点の数+1チェスボードがあるから
+	auto _cheker_height = (_height + 2) * cheker_size; // チェッカーパターン全体の縦幅(pixel)
+	unsigned int _image_offset_width = (PROJ_WIDTH - _cheker_width) / 2; //オフセットの計算
+	unsigned int _image_offset_height = (PROJ_HEIGHT - _cheker_height) / 2;  //オフセットの計算
+	calib_image.create(PROJ_HEIGHT,PROJ_WIDTH,CV_8UC1);
+	std::cout << "オフセットは(x, y) = (" << _image_offset_width << ", " << _image_offset_height << ")" <<std::endl; 
+	if(color_flag == true)
+	{
+		for(int y = 0; y < _height + 2; y++)
+		{
+			for(int x = 0; x < _width + 2; x++)
+			{
+				if((y % 2) == 0)
+				{
+					if((x % 2) == 1)
+					{
+						//塗りつぶす領域が範囲を超えないかどうかのチェック
+						if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+						{
+							Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), true);
+						}
+					}
+					else
+					{
+						if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+						{
+							Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), false);
+						}	
+					}
+				}
+				else
+				{
+					if((x % 2) == 1)
+					{
+						if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+						{
+							Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), false);
+						}
+					}
+					else
+					{
+						if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+						{
+							Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), true);
+						}	
+					}
+				}
+			}
+		}
+			
+	}
+	else
+	{
+		{
+			for(int y = 0; y < _height + 2; y++)
+			{
+				for(int x = 0; x < _width + 2; x++)
+				{
+					if((y % 2) == 0)
+					{
+						if((x % 2) == 1)
+						{
+							//塗りつぶす領域が範囲を超えないかどうかのチェック
+							if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+							{
+								Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), false);
+							}
+						}
+						else
+						{
+							if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+							{
+								Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), true);
+							}	
+						}
+					}
+					else
+					{
+						if((x % 2) == 1)
+						{
+							if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+							{
+								Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), true);
+							}
+						}
+						else
+						{
+							if(((x + 1) * cheker_size + _image_offset_width) < PROJ_WIDTH && (y + 1) * cheker_size + _image_offset_height < PROJ_HEIGHT)
+							{
+								Square_paint(calib_image, cheker_size, cv::Point(x * cheker_size + _image_offset_width, y * cheker_size + _image_offset_height), false);
+							}	
+						}
+					}
+				}
+			}
+
+		}
+	}
+}
+
+void Square_paint(cv::Mat &paint_image, const int square_size, const cv::Point offset_point, bool flag)
+{
+	if(flag == true)
+	{
+		for(int y = 0;y<square_size;y++)
+		{
+			for(int x = 0;x<square_size;x++)
+			{
+				paint_image.at<unsigned char>(offset_point.y + y, offset_point.x + x) = 255;
+			}
+		}
+	}
+	else
+	{
+		for(int y = 0;y<square_size;y++)
+		{
+			for(int x = 0;x<square_size;x++)
+			{
+				paint_image.at<unsigned char>(offset_point.y + y, offset_point.x + x) = 0;
+			}
+		}
+	}
+}
+

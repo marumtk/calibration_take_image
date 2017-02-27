@@ -1,0 +1,64 @@
+#include "basler.h"
+#include "Webcam.h"
+#include "XimeaXiQ.h"
+
+int main()
+{
+	XimeaXiQ Ximea;
+	basler Basler;
+	std::vector<cv::Mat> ImageBufferRight(0);
+	std::vector<cv::Mat> ImageBufferLeft(0);
+	cv::Mat XimeaImage;
+	cv::Mat BaslerImage;
+
+	while(true)
+	{
+
+		Basler.cap_color(BaslerImage);
+		Ximea.getFrame(XimeaImage);
+		cv::imshow("LeftImageWindow",BaslerImage);
+		cv::imshow("RightImageWindow",XimeaImage);
+		int key = cv::waitKey(1);
+		//B‘œI—¹
+		if(key == 'q')
+		{
+			break;
+		}
+		//ˆê–‡æ“¾‚·‚é
+		else if(key == 'w')
+		{
+			
+			ImageBufferLeft.push_back(BaslerImage);
+			ImageBufferRight.push_back(XimeaImage);
+		}
+		//Œ»İ‚ÌB‘œ–‡”Šm”F
+		else if(key == 'p')
+		{
+			std::cout << "Œ»İ " << ImageBufferLeft.size() << " –‡B‘œ‚³‚ê‚Ä‚¢‚Ü‚·" << std::endl;
+		}
+		//B‘œ‚ğ¸”s‚µ‚½‚çæ‚èÁ‚µ
+		else if(key == 'c')
+		{
+			if(ImageBufferLeft.size() != 0)
+			{
+				ImageBufferLeft.resize(ImageBufferLeft.size() - 1);
+				ImageBufferRight.resize(ImageBufferRight.size() -1);
+			}
+		}
+
+		key = 0;
+
+
+	}
+
+	char Filename[100];
+	char _filename1[] = "left"
+	char _filename2[] = "right";
+	char fileext[] = "bmp";
+	for(int i=0; i++; i++)
+	{
+		
+	}
+
+
+}
